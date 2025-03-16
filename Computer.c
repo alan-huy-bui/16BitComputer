@@ -1,13 +1,13 @@
 #include <stdio.h>
 
 //  Special Registers
-#define SP 5
-#define LR 6
-#define PC 7
+#define SP  5
+#define LR  6
+#define PSR 7
 
 //  Special Memory Locations
-#define ROM     0x000
-#define Stack   0x0FFF
+#define ROM 0x000
+#define SB  0xFFFF
 
 
 /**
@@ -34,7 +34,7 @@ static void getProgramStatus();
  *      Initializing Registers to their Appropriate Value,
  *      Beginning Execution of Each Instruction
  * 
- * Inputs: Pointer to Assembled Program, Program Size
+ * Inputs:  Pointer to Assembled Program, Program Size
  * Outputs: None
  */
 void initializeComputer(unsigned short int* programPointer, int programSize) {
@@ -49,14 +49,14 @@ void initializeComputer(unsigned short int* programPointer, int programSize) {
         registers[i] = 0;
     }
 
-    //  Initialize Stack Pointer (SP) to Stack Base
-    registers[SP] = Stack;
+    //  Initialize Stack Pointer (SP) to Stack Base (SB)
+    registers[SP] = SB;
 
-    //  Initialize Program Counter (PC) with First Instruction Address (Beginning of ROM)
-    registers[PC] = ROM;
+    //  Initialize Program Status Register (PSR) with First Instruction Address (Beginning of ROM)
+    registers[PSR] = ROM;
 
-    //  Initialize Flags to Z in Program Counter (PC)
-    registers[PC] |= (1 << 14);
+    //  Initialize Flags to Z in Program Status Register (PSR)
+    registers[PSR] |= (1 << 14);
 
     //  Begin Running Computer
     runComputer();
@@ -76,7 +76,7 @@ static void runComputer(void) {
     int hardCodeStop = 0;
 
     while (hardCodeStop < 10) {
-        instructionRegister = memory[registers[PC] & 0x1FFF];
+        instructionRegister = memory[registers[PSR] & 0x1FFF];
 
         printf("\nInstruction: ");
         printf("%d", instructionRegister);
@@ -97,9 +97,9 @@ static void runComputer(void) {
  *      Modifying Registers, and/or
  *      Reading/Writing to Memory, and/or
  *      Setting Condition Code Bits, and/or
- *      Incrementing or Modifying PC
+ *      Incrementing or Modifying PSR
  * 
- * Inputs: 16-bit Instruction from Instruction Register (IR)
+ * Inputs:  16-bit Instruction from Instruction Register (IR)
  * Outputs: None
  */
 static void serviceInstruction(unsigned short int instruction) {
@@ -108,7 +108,7 @@ static void serviceInstruction(unsigned short int instruction) {
     unsigned short int opcode = instruction >> 12;
 
     //  Retrieve Flags
-    unsigned int flags = (registers[PC] >> 13) & 0x0007;
+    unsigned int flags = (registers[PSR] >> 13) & 0x0007;
 
     //  Declare Possible Instruction Parameters as Local Variables
     unsigned int destinationRegister;
@@ -126,9 +126,9 @@ static void serviceInstruction(unsigned short int instruction) {
          * Unconditional Branch (B)
          */
         case(0b0000):
-            registers[PC] &= 0x0FFF;
+            registers[PSR] &= 0x0FFF;
             immediate = instruction & 0x0FFF;
-            registers[PC] |= immediate;
+            registers[PSR] |= immediate;
 
             break;
 
@@ -141,17 +141,17 @@ static void serviceInstruction(unsigned short int instruction) {
             switch((instruction << 11) & 0x0001) {
                 case(0b0):
                     if (flags == 0b010) {
-                        registers[PC] &= 0x0FFF;
+                        registers[PSR] &= 0x0FFF;
                         immediate = instruction & 0x07FF;
-                        registers[PC] |= immediate;
+                        registers[PSR] |= immediate;
                     }
                     break;
 
                 case(0b1):
                     if (flags != 0b010) {
-                        registers[PC] &= 0x0FFF;
+                        registers[PSR] &= 0x0FFF;
                         immediate = instruction & 0x07FF;
-                        registers[PC] |= immediate;
+                        registers[PSR] |= immediate;
                     }
                     break;
             }
@@ -164,31 +164,24 @@ static void serviceInstruction(unsigned short int instruction) {
          * Conditional Branch (BGT / BLT)
          */
         case(0b0010):
-
             switch((instruction << 11) & 0x0001) {
-
                 case(0b0):
-
                     if (flags == 0b001) {
-                        registers[PC] &= 0x0FFF;
+                        registers[PSR] &= 0x0FFF;
 
                         immediate = instruction & 0x07FF;
-                        registers[PC] |= immediate;
+                        registers[PSR] |= immediate;
                     }
-
                     break;
 
                 case(0b1):
-
                     if (flags == 0b100) {
-                        registers[PC] &= 0x0FFF;
+                        registers[PSR] &= 0x0FFF;
 
                         immediate = instruction & 0x07FF;
-                        registers[PC] |= immediate;
+                        registers[PSR] |= immediate;
                     }
-
                     break;    
-
             }
 
             break;
@@ -199,7 +192,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Load Word (LDR)
          */
         case(0b0011):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 7) & 0x7;
             sourceRegister = (instruction >> 4) & 0x7;
@@ -232,7 +225,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Store Word (STR)
          */
         case(0b0100):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 4) & 0x0007;
             sourceRegister = (instruction >> 7) & 0x0007;
@@ -261,7 +254,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Move Word (MOV)
          */
         case(0b0101):
-            registers[PC] = registers[PC] + 1;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 8) & 0x0007;
             sourceRegister = (instruction >> 5) & 0x0007;
@@ -286,7 +279,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Logical And (AND)
          */
         case(0b0110):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 8) & 0x0007;
             sourceRegister = (instruction >> 5) & 0x0007;
@@ -311,7 +304,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Logical Or (OR)
          */
         case(0b0111):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 8) & 0x0007;
             sourceRegister = (instruction >> 5) & 0x0007;
@@ -336,7 +329,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Logical Not (NOT)
          */
         case(0b1000):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 8) & 0x7;
             registers[destinationRegister] = ~registers[destinationRegister];
@@ -350,7 +343,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Add (ADD)
          */
         case(0b1001):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 8) & 0x0007;
             sourceRegister = (instruction >> 5) & 0x0007;
@@ -376,7 +369,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Subtract (SUB)
          */
         case(0b1010):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 8) & 0x0007;
             sourceRegister = (instruction >> 5) & 0x0007;
@@ -402,7 +395,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Compare (CMP)
          */
         case(0b1011):
-            registers[PC]++;
+            registers[PSR]++;
 
             sourceRegister = (instruction >> 8) & 0x0007;
             source2Register = (instruction >> 5) & 0x0007;
@@ -429,7 +422,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Push Register onto Stack (PUSH)
          */
         case(0b1100):
-            registers[PC]++;
+            registers[PSR]++;
 
             sourceRegister = (instruction >> 9) & 0x0007;
 
@@ -444,7 +437,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Pop off Stack into Register (POP)
          */
         case(0b1101):
-            registers[PC]++;
+            registers[PSR]++;
 
             destinationRegister = (instruction >> 9) & 0x0007;
 
@@ -459,7 +452,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Reserved
          */
         case(0b1110):
-            registers[PC]++;
+            registers[PSR]++;
             break;
 
 
@@ -468,7 +461,7 @@ static void serviceInstruction(unsigned short int instruction) {
          * Halt Program (HALT)
          */
         case(0b1111):
-            registers[PC]++;
+            registers[PSR]++;
             break;
 
             break;
@@ -478,25 +471,25 @@ static void serviceInstruction(unsigned short int instruction) {
 
 
 /**
- * Sets N, Z, P Flags in Program Counter (PC)
+ * Sets N, Z, P Flags in Program Status Register (PSR)
  * 
- * Inputs: Register Number of Register Modified in Previous Instruction
+ * Inputs:  Register Number of Register Modified in Previous Instruction
  * Outputs: None
  */
 static void setFlags(int modifiedRegister) {
 
     //  Clear Current Flags
-    registers[PC] &= 0x1FFF;
+    registers[PSR] &= 0x1FFF;
 
     //  Sets Flags According to Modified Register
     if (registers[modifiedRegister] < 0) {
-        registers[PC] |= (1 << 15);
+        registers[PSR] |= (1 << 15);
     }
     else if (registers[modifiedRegister] > 0) {
-        registers[PC] |= (1 << 13);
+        registers[PSR] |= (1 << 13);
     }
     else {
-        registers[PC] |= (1 << 12);
+        registers[PSR] |= (1 << 12);
     }
 
 }
@@ -506,7 +499,7 @@ static void setFlags(int modifiedRegister) {
 /**
  * Helper Function that Prints Program Registers
  * 
- * Inputs: None
+ * Inputs:  None
  * Outputs: None
  */
 static void getProgramStatus(void) {
@@ -525,16 +518,16 @@ static void getProgramStatus(void) {
 
     }
 
-    printf("      R[SP]:");
+    printf("      SP: ");
     printf("%d", registers[SP]);
     printf("\n");
 
-    printf("      R[LR]:");
+    printf("      LR: ");
     printf("%d", registers[LR]);
     printf("\n");
 
-    printf("      R[PC]:");
-    printf("%d", registers[PC]);
+    printf("      PSR: ");
+    printf("%d", registers[PSR]);
     printf("\n");
 
     printf("====================\n\n");
