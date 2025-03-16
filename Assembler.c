@@ -1,6 +1,7 @@
 #include <stdio.h>
 
-#define MaxProgramSize 65538        // TODO: Develop Memory Map and Change Digit
+//  ROM is 0x0000 to 0x5FFF
+#define MaxProgramSize 24576
 
 
 /**
