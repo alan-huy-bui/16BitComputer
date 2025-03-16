@@ -1,17 +1,47 @@
-    16-Bit Architecture
+
+	== ARCHITECTURE ==============
+
+	16-Bit (Thumb) RISC Architecture
+	Heavily Inspired by ARM and LC-3 Architectures
+
+	==============================	
+
+
+	== MEMORY MAP ================
 	
+	0x0000-0x5FFF: ROM
+	0x6000-0xBFFF: RAM
+	0xC000-0xFFFF: Stack
+	
+	Addressability: 16-Bits
+	Address Space: 2^16 = 65536 Locations
+	Endianness: N/A
+	
+	==============================
+
 
 	== REGISTERS =================
 	
-		R0		General Purpose	(Input/Output)
-		R1		General Purpose	(Input)
-		R2		General Purpose
-		R3		General Purpose
-		R4		General Purpose
-		R5/SP	Stack Pointer
-		R6/LR	Link Register
-		R7/PC	Program Counter and Flags
-		
+	R0		General Purpose
+	R1		General Purpose
+	R2		General Purpose
+	R3		General Purpose
+	R4		General Purpose
+	R5/SP	Stack Pointer
+	R6/LR	Link Register
+	R7/PSR*	Program Status Register
+
+	IR		Instruction Register
+
+	As this architecture is heavy inspired by ARM Architectures, we will
+	follow a miniature version of the ARM Architecture Procedure Call Standard (AAPCS),
+	where R0 is our function input, and R0-R1 are our function outputs.
+	R2-R4 must be kept the same through function calls.
+
+	Note.
+		R7/PSR contains both the Condition Code Flags and Program Counter,
+		where R7 has N[15], Z[14], P[13], and PC[12:0]
+	
 	==============================
 	
 	
@@ -62,7 +92,7 @@
 	
 	1110	--
 	
-	1111	HALT
+	1111	HALT	--					0[11:0]											HALT
 	
 	
 	Note.
@@ -74,18 +104,12 @@
 	==============================
 	
 	
-	== MEMORY MAP ================
+	== ABOUT ME ==================
+
+	Alan Bui
+	Department of Electrical and Computer Engineering
+	The University of Texas at Austin
 	
-	000-399: ROM
-	400-999: RAM
-	
-	Addressability: 8-Bits
-	Address Space: 100 Locations
-	Endianness: Little
-	
+	Spring 2025
+
 	==============================
-	
-	
-	
-	
-	
