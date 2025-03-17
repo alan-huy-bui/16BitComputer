@@ -1,13 +1,18 @@
 #include <stdio.h>
+#include <stdbool.h>
 
 //  Special Registers
-#define SP  5
-#define LR  6
-#define PSR 7
+#define SP  6
+#define LR  7
 
 //  Special Memory Locations
-#define ROM 0x000
+#define ROM 0x0000
 #define SB  0xFFFF
+
+//  Condition Code Flags
+#define N   0b100
+#define Z   0b010
+#define P   0b001
 
 
 /**
@@ -16,6 +21,10 @@
 static unsigned short int registers[8];
 static unsigned short int memory[65538];
 static unsigned short int instructionRegister;
+static unsigned short int programCounter;
+static unsigned short int programStatusRegister;
+
+static bool executionEnable;
 
 
 /**
@@ -52,11 +61,11 @@ void initializeComputer(unsigned short int* programPointer, int programSize) {
     //  Initialize Stack Pointer (SP) to Stack Base (SB)
     registers[SP] = SB;
 
-    //  Initialize Program Status Register (PSR) with First Instruction Address (Beginning of ROM)
-    registers[PSR] = ROM;
+    //  Initialize Program Counter (PC) with First Instruction Address (Beginning of ROM)
+    programCounter = ROM;
 
     //  Initialize Flags to Z in Program Status Register (PSR)
-    registers[PSR] |= (1 << 14);
+    programStatusRegister = (1 << 14);
 
     //  Begin Running Computer
     runComputer();
@@ -75,11 +84,13 @@ static void runComputer(void) {
 
     int hardCodeStop = 0;
 
-    while (hardCodeStop < 10) {
-        instructionRegister = memory[registers[PSR] & 0x1FFF];
+    executionEnable = true;
 
-        printf("\nInstruction: ");
-        printf("%d", instructionRegister);
+    while ((hardCodeStop < 10) & (executionEnable)) {
+        instructionRegister = memory[programCounter];
+
+        printf("\nInstruction: 0x");
+        printf("%X", instructionRegister);
         printf("\n");
 
         serviceInstruction(instructionRegister);
@@ -107,15 +118,23 @@ static void serviceInstruction(unsigned short int instruction) {
     //  Retreieve Opcode
     unsigned short int opcode = instruction >> 12;
 
-    //  Retrieve Flags
-    unsigned int flags = (registers[PSR] >> 13) & 0x0007;
+    //  Retrieve Extension
+    unsigned short int ext1b = (instruction >> 11) & 0x0001;
+    unsigned short int ext2b = (instruction >> 10) & 0x0002;
 
-    //  Declare Possible Instruction Parameters as Local Variables
-    unsigned int destinationRegister;
-    unsigned int sourceRegister;
-    unsigned int source2Register;
-    unsigned int offsetRegister;
-    unsigned int immediate;
+    //  Retrieve Flags
+    unsigned int flags = (programStatusRegister >> 13) & 0x0007;
+
+    //  Define Possible Instruction Parameters
+    unsigned int destinationRegister = instruction & 0x0007;
+    unsigned int sourceRegister = (instruction >> 3) & 0x0007;
+    unsigned int source2Register = (instruction >> 6) & 0x0007;
+    unsigned int imm12 = instruction & 0x0FFF;
+    unsigned int imm11 = instruction & 0x07FF;
+    unsigned int imm9 = (instruction >> 3) & 0x01FF;
+    unsigned int imm8 = (instruction >> 3) & 0x00FF;
+    unsigned int imm7 = (instruction >> 3) & 0x007F;
+    unsigned int imm4 = (instruction >> 6) & 0x000F;
 
 
     //  Main Logic for Servicing Instructions
@@ -123,35 +142,29 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Unconditional Branch (B)
+         * Unconditional Branch (BRR)
          */
-        case(0b0000):
-            registers[PSR] &= 0x0FFF;
-            immediate = instruction & 0x0FFF;
-            registers[PSR] |= immediate;
+        case(0x0):
+            programCounter = imm12;
 
             break;
 
 
         /**
          * Instruction:
-         * Conditional Branch (BEQ / BNE)
+         * Conditional Branch with Equality (BEQ / BNE)
          */
-        case(0b0001):
-            switch((instruction << 11) & 0x0001) {
+        case(0x1):
+            switch(ext1b) {
                 case(0b0):
-                    if (flags == 0b010) {
-                        registers[PSR] &= 0x0FFF;
-                        immediate = instruction & 0x07FF;
-                        registers[PSR] |= immediate;
+                    if (flags == Z) {
+                        programCounter = imm11;
                     }
                     break;
 
                 case(0b1):
-                    if (flags != 0b010) {
-                        registers[PSR] &= 0x0FFF;
-                        immediate = instruction & 0x07FF;
-                        registers[PSR] |= immediate;
+                    if (flags != Z) {
+                        programCounter = imm11;
                     }
                     break;
             }
@@ -161,25 +174,19 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Conditional Branch (BGT / BLT)
+         * Conditional Branch with Comparison (BGT / BLT)
          */
-        case(0b0010):
-            switch((instruction << 11) & 0x0001) {
+        case(0x2):
+            switch(ext1b) {
                 case(0b0):
-                    if (flags == 0b001) {
-                        registers[PSR] &= 0x0FFF;
-
-                        immediate = instruction & 0x07FF;
-                        registers[PSR] |= immediate;
+                    if (flags == P) {
+                        programCounter = imm11;
                     }
                     break;
 
                 case(0b1):
-                    if (flags == 0b100) {
-                        registers[PSR] &= 0x0FFF;
-
-                        immediate = instruction & 0x07FF;
-                        registers[PSR] |= immediate;
+                    if (flags == N) {
+                        programCounter = imm11;
                     }
                     break;    
             }
@@ -189,31 +196,26 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Load Word (LDR)
+         * Load Register (LDR)
          */
-        case(0b0011):
-            registers[PSR]++;
+        case(0x3):
+            programCounter++;
 
-            destinationRegister = (instruction >> 7) & 0x7;
-            sourceRegister = (instruction >> 4) & 0x7;
-            offsetRegister = (instruction >> 1) & 0x7;
-            immediate = instruction & 0xF;
-
-            switch((instruction >> 10) & 0x3) {
+            switch(ext2b) {
                 case(0b00):
                     registers[destinationRegister] = memory[registers[sourceRegister]];
                     break;
 
                 case(0b01):
-                    registers[destinationRegister] = memory[registers[sourceRegister] + registers[offsetRegister]];
+                    registers[destinationRegister] = memory[registers[sourceRegister] + registers[source2Register]];
                     break;
 
                 case(0b10):
-                    registers[destinationRegister] = memory[registers[sourceRegister] + immediate];
+                    registers[destinationRegister] = memory[registers[sourceRegister] + imm4];
                     break;
 
                 case(0b11):
-                    registers[destinationRegister] = instruction & 0x007F;
+                    registers[destinationRegister] = imm12;
                     break;
             }
 
@@ -222,27 +224,22 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Store Word (STR)
+         * Store Register (STR)
          */
-        case(0b0100):
-            registers[PSR]++;
+        case(0x4):
+            programCounter++;
 
-            destinationRegister = (instruction >> 4) & 0x0007;
-            sourceRegister = (instruction >> 7) & 0x0007;
-            offsetRegister = (instruction >> 1) & 0x0007;
-            immediate = instruction & 0x000F;
-
-            switch((instruction >> 10) & 0x0003) {
+            switch(ext2b) {
                 case(0b00):
                     memory[registers[destinationRegister]] = registers[sourceRegister];
                     break;
 
                 case(0b01):
-                    memory[registers[destinationRegister] + registers[offsetRegister]] = registers[sourceRegister];
+                    memory[registers[destinationRegister] + registers[source2Register]] = registers[sourceRegister];
                     break;
 
                 case(0b10):
-                    memory[registers[destinationRegister] + immediate] = registers[sourceRegister];
+                    memory[registers[destinationRegister] + imm4] = registers[sourceRegister];
                     break;
             }
 
@@ -251,22 +248,18 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Move Word (MOV)
+         * Move (MOV)
          */
-        case(0b0101):
-            registers[PSR]++;
+        case(0x5):
+            programCounter++;
 
-            destinationRegister = (instruction >> 8) & 0x0007;
-            sourceRegister = (instruction >> 5) & 0x0007;
-            immediate = instruction & 0x00FF;
-
-            switch((instruction >> 11) & 0x0001) {
+            switch(ext1b) {
                 case(0b0):
                     registers[destinationRegister] = registers[sourceRegister];
                     break;
 
                 case(0b1):
-                    registers[destinationRegister] = immediate;
+                    registers[destinationRegister] = imm8;
                     break;
             }
 
@@ -276,22 +269,26 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Logical And (AND)
+         * Bitwise Logical And (AND)
          */
-        case(0b0110):
-            registers[PSR]++;
+        case(0x6):
+            programCounter++;
 
-            destinationRegister = (instruction >> 8) & 0x0007;
-            sourceRegister = (instruction >> 5) & 0x0007;
-            source2Register = (instruction >> 2) & 0x0007;
-
-            switch((instruction >> 11) & 0x1) {
-                case(0b0):
+            switch(ext2b) {
+                case(0b00):
                     registers[destinationRegister] = registers[destinationRegister] & registers[sourceRegister];
                     break;
 
-                case(0b1):
+                case(0b01):
+                    registers[destinationRegister] = registers[destinationRegister] & imm7;
+                    break;
+
+                case(0b10):
                     registers[destinationRegister] = registers[sourceRegister] & registers[source2Register];
+                    break;
+
+                case(0b11):
+                    registers[destinationRegister] = registers[sourceRegister] & imm4;
                     break;
             }
 
@@ -301,22 +298,26 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Logical Or (OR)
+         * Bitwise Logical Or (OR)
          */
-        case(0b0111):
-            registers[PSR]++;
+        case(0x7):
+            programCounter++;
 
-            destinationRegister = (instruction >> 8) & 0x0007;
-            sourceRegister = (instruction >> 5) & 0x0007;
-            source2Register = (instruction >> 2) & 0x0007;
-
-            switch((instruction >> 11) & 0x1) {
-                case(0b0):
+            switch(ext2b) {
+                case(0b00):
                     registers[destinationRegister] = registers[destinationRegister] | registers[sourceRegister];
                     break;
 
-                case(0b1):
+                case(0b01):
+                    registers[destinationRegister] = registers[destinationRegister] | imm7;
+                    break;
+
+                case(0b10):
                     registers[destinationRegister] = registers[sourceRegister] | registers[source2Register];
+                    break;
+
+                case(0b11):
+                    registers[destinationRegister] = registers[sourceRegister] | imm4;
                     break;
             }
 
@@ -326,12 +327,11 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Logical Not (NOT)
+         * Bitwise Logical Not (NOT)
          */
-        case(0b1000):
-            registers[PSR]++;
+        case(0x8):
+            programCounter++;
 
-            destinationRegister = (instruction >> 8) & 0x7;
             registers[destinationRegister] = ~registers[destinationRegister];
 
             setFlags(destinationRegister);
@@ -340,23 +340,26 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Add (ADD)
+         * Addition (ADD)
          */
-        case(0b1001):
-            registers[PSR]++;
+        case(0x9):
+            programCounter;
 
-            destinationRegister = (instruction >> 8) & 0x0007;
-            sourceRegister = (instruction >> 5) & 0x0007;
-            source2Register = (instruction >> 2) & 0x0007;
-            immediate = instruction & 0x001F;
-
-            switch((instruction >> 11) & 0x0001) {
-                case(0b0):
-                    registers[destinationRegister] = registers[sourceRegister] - registers[source2Register];
+            switch(ext2b) {
+                case(0b00):
+                    registers[destinationRegister] = registers[destinationRegister] + registers[sourceRegister];
                     break;
 
-                case(0b1):
-                    registers[destinationRegister] = registers[sourceRegister] - immediate;
+                case(0b01):
+                    registers[destinationRegister] = registers[destinationRegister] + imm7;
+                    break;
+
+                case(0b10):
+                    registers[destinationRegister] = registers[sourceRegister] + registers[source2Register];
+                    break;
+
+                case(0b11):
+                    registers[destinationRegister] = registers[sourceRegister] + imm4;
                     break;
             }
 
@@ -366,23 +369,26 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Subtract (SUB)
+         * Subtraction (SUB)
          */
-        case(0b1010):
-            registers[PSR]++;
+        case(0xA):
+            programCounter;
 
-            destinationRegister = (instruction >> 8) & 0x0007;
-            sourceRegister = (instruction >> 5) & 0x0007;
-            source2Register = (instruction >> 2) & 0x0007;
-            immediate = instruction & 0x001F;
-
-            switch((instruction >> 11) & 0x0001) {
-                case(0b0):
-                    registers[destinationRegister] = registers[sourceRegister] + registers[source2Register];
+            switch(ext2b) {
+                case(0b00):
+                    registers[destinationRegister] = registers[destinationRegister] - registers[sourceRegister];
                     break;
 
-                case(0b1):
-                    registers[destinationRegister] = registers[sourceRegister] - immediate;
+                case(0b01):
+                    registers[destinationRegister] = registers[destinationRegister] - imm7;
+                    break;
+
+                case(0b10):
+                    registers[destinationRegister] = registers[sourceRegister] - registers[source2Register];
+                    break;
+
+                case(0b11):
+                    registers[destinationRegister] = registers[sourceRegister] - imm4;
                     break;
             }
 
@@ -394,37 +400,31 @@ static void serviceInstruction(unsigned short int instruction) {
          * Instruction:
          * Compare (CMP)
          */
-        case(0b1011):
-            registers[PSR]++;
+        case(0xB):
+            programCounter++;
 
-            sourceRegister = (instruction >> 8) & 0x0007;
-            source2Register = (instruction >> 5) & 0x0007;
-            immediate = (instruction) & 0x00FF;
+            int difference;
 
-            int temp;
-
-            switch((instruction >> 11) & 0x0001) {
+            switch(ext1b) {
                 case(0b0):
-                    temp = registers[sourceRegister] - registers[source2Register];
+                    difference = registers[destinationRegister] - registers[sourceRegister];
                     break;
 
                 case(0b1):
-                    temp = registers[sourceRegister] - immediate;
+                    difference = registers[destinationRegister] - imm8;
                     break;
             }
 
-            setFlags(temp);
+            setFlags(difference);
             break;
 
 
         /**
          * Instruction:
-         * Push Register onto Stack (PUSH)
+         * Push Register onto Stack (PSH)
          */
-        case(0b1100):
-            registers[PSR]++;
-
-            sourceRegister = (instruction >> 9) & 0x0007;
+        case(0xC):
+            programCounter++;
 
             registers[SP]--;
             memory[registers[SP]] = registers[sourceRegister];
@@ -436,10 +436,8 @@ static void serviceInstruction(unsigned short int instruction) {
          * Instruction:
          * Pop off Stack into Register (POP)
          */
-        case(0b1101):
-            registers[PSR]++;
-
-            destinationRegister = (instruction >> 9) & 0x0007;
+        case(0xD):
+            programCounter++;
 
             registers[destinationRegister] = memory[registers[SP]];
             registers[SP]++;
@@ -449,20 +447,21 @@ static void serviceInstruction(unsigned short int instruction) {
 
         /**
          * Instruction:
-         * Reserved
+         * Jump (JMP)
          */
-        case(0b1110):
-            registers[PSR]++;
+        case(0xE):
+            programCounter = memory[registers[destinationRegister] + imm9];
             break;
 
 
         /**
          * Instruction:
-         * Halt Program (HALT)
+         * Halt Program Execution (HLT)
          */
-        case(0b1111):
-            registers[PSR]++;
-            break;
+        case(0xF):
+            programCounter++;
+            
+            executionEnable = false;
 
             break;
     }
@@ -479,17 +478,17 @@ static void serviceInstruction(unsigned short int instruction) {
 static void setFlags(int modifiedRegister) {
 
     //  Clear Current Flags
-    registers[PSR] &= 0x1FFF;
+    programStatusRegister &= 0x1FFF;
 
     //  Sets Flags According to Modified Register
     if (registers[modifiedRegister] < 0) {
-        registers[PSR] |= (1 << 15);
+        programStatusRegister |= (N << 13);
     }
     else if (registers[modifiedRegister] > 0) {
-        registers[PSR] |= (1 << 13);
+        programStatusRegister |= (P << 13);
     }
     else {
-        registers[PSR] |= (1 << 12);
+        programStatusRegister |= (Z << 13);
     }
 
 }
@@ -508,26 +507,30 @@ static void getProgramStatus(void) {
     printf("  Program Status\n");
     printf("    Registers:\n");
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 6; i++) {
 
         printf("      R");
         printf("%d", i);
-        printf(": ");
-        printf("%d", registers[i]);
+        printf(":  0x");
+        printf("%X", registers[i]);
         printf("\n");
 
     }
 
-    printf("      SP: ");
-    printf("%d", registers[SP]);
+    printf("      SP:  0x");
+    printf("%X", registers[SP]);
     printf("\n");
 
-    printf("      LR: ");
-    printf("%d", registers[LR]);
+    printf("      LR:  0x");
+    printf("%X", registers[LR]);
     printf("\n");
 
-    printf("      PSR: ");
-    printf("%d", registers[PSR]);
+    printf("      PSR: 0x");
+    printf("%X", programStatusRegister);
+    printf("\n");
+
+    printf("      PC:  0x");
+    printf("%X", programCounter);
     printf("\n");
 
     printf("====================\n\n");
