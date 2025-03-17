@@ -26,12 +26,12 @@ unsigned short int* assemble(unsigned short int* textProgram, int programLength)
 
     //  TODO: Change to Actual Assembler
     unsigned short int temp[6] = {
-        0x5801,     //  MOV R0, #1
-        0x590F,     //  MOV R1, #15
-        0x4080,     //  STR R1, [R0]
-        0x3100,     //  LDR R2, [R0]
-        0x6C28,     //  AND R4, R1, R2
-        0xF000      //  HALT
+        0x5808,     //  MOV R0, #1
+        0x5879,     //  MOV R1, #15
+        0x4008,     //  STR R1, [R0]
+        0x3002,     //  LDR R2, [R0]
+        0x6884,     //  AND R4, R0, R2
+        0xF000      //  HLT
     };
 
     for (int i = 0; i < sizeof(temp); i++) {
